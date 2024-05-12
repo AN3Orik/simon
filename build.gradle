@@ -1,0 +1,108 @@
+plugins {
+    id 'idea'
+    id 'java-library'
+    id 'maven-publish'
+    id 'signing'
+}
+
+repositories {
+    mavenCentral()
+}
+
+version = "1.0"
+
+dependencies {
+    annotationProcessor("org.jetbrains:annotations:24.1.0")
+    api("org.jetbrains:annotations:24.1.0")
+
+    annotationProcessor('org.projectlombok:lombok:1.18.32')
+    api("org.projectlombok:lombok:1.18.32")
+
+    api("org.apache.mina:mina-core:2.2.2")
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_16
+    targetCompatibility = JavaVersion.VERSION_16
+}
+
+compileJava {
+    doLast {
+        jar {
+            manifest {
+                attributes('Implementation-Title': project.name,
+                        'Implementation-Version': version,
+                        'Built-Date': new Date().toString(),
+                        'Built-By': System.getProperty('user.name'),
+                        'Built-JDK': System.getProperty('java.version'),
+                        'Source-Compatibility': project.sourceCompatibility,
+                        'Target-Compatibility': project.targetCompatibility
+                )
+            }
+        }
+    }
+}
+
+java {
+    withSourcesJar()
+    withJavadocJar()
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            groupId "host.anzo"
+            artifactId = "simon"
+            from components.java
+
+            pom {
+                name = "simon"
+                description = "Simple Invocation of Methods Over Network, a kind of RMI replacement"
+                url = "https://github.com/AN3Orik/simon"
+
+                licenses {
+                    license {
+                        name = 'GPL-3.0 license'
+                        url = 'https://www.gnu.org/licenses/gpl-3.0.txt'
+                    }
+                }
+
+                scm {
+                    connection = 'scm:git:https://github.com/AN3Orik/simon.git'
+                    developerConnection = 'scm:git:https://github.com/AN3Orik/simon.git'
+                    url = 'https://github.com/AN3Orik/simon'
+                }
+
+                developers {
+                    developer {
+                        id = 'ACHR'
+                        name = 'Alexander Christian'
+                        email = 'alex@root1.de'
+                    }
+                    developer {
+                        id = 'ANZO'
+                        name = 'Anton Lasevich'
+                        email = 'mostproduct@gmail.com'
+                    }
+                }
+            }
+        }
+    }
+
+    repositories {
+        maven {
+            url = "https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/"
+            credentials {
+                username "$mavenCentralUsername"
+                password "$mavenCentralPassword"
+            }
+        }
+    }
+}
+
+signing {
+    def signingKey = "$mavenCentralSigningKey"
+    def signingPassword = "$mavenCentralSigningKeyPassword"
+    useInMemoryPgpKeys(signingKey, signingPassword)
+    sign publishing.publications.maven
+}
