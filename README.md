@@ -6,3 +6,14 @@
 
 Forked from https://github.com/root1-dot-de/simon many years ago with some changes i didn't remember.
 Uploaded for creating maven central artifact.
+
+## Distribution
+New releases are made available on Maven Central, enabling you to employ your preferred dependency management tool for retrieval.
+
+```groovy
+// Gradle
+dependencies {
+    // EOS SDK wrapper library
+    implementation "host.anzo:simon:1.0"
+}
+```
