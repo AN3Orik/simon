@@ -15,10 +15,16 @@ dependencies {
     annotationProcessor("org.jetbrains:annotations:24.1.0")
     api("org.jetbrains:annotations:24.1.0")
 
-    annotationProcessor('org.projectlombok:lombok:1.18.32')
-    api("org.projectlombok:lombok:1.18.32")
+    annotationProcessor('org.projectlombok:lombok:1.18.34')
+    api("org.projectlombok:lombok:1.18.34")
 
     api("org.apache.mina:mina-core:2.2.2")
+}
+
+idea {
+    module {
+        excludeDirs += file('gradle')
+    }
 }
 
 java {
@@ -93,8 +99,8 @@ publishing {
         maven {
             url = "https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/"
             credentials {
-                username "$mavenCentralUsername"
-                password "$mavenCentralPassword"
+                username "$mavenCentralUsernameToken"
+                password "$mavenCentralPasswordToken"
             }
         }
     }
