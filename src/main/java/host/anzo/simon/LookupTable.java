@@ -22,6 +22,7 @@ import host.anzo.simon.exceptions.LookupFailedException;
 import host.anzo.simon.utils.Utils;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.mina.core.session.IoSession;
+import org.jetbrains.annotations.NotNull;
 
 import java.lang.reflect.Method;
 import java.util.*;
@@ -335,7 +336,7 @@ public class LookupTable implements LookupTableMBean {
 	 *
 	 * @param remoteObject object to remove
 	 */
-	private void removeRemoteObjectFromSet(Object remoteObject) {
+	private void removeRemoteObjectFromSet(@NotNull Object remoteObject) {
 		int hashCode = remoteObject.hashCode();
 		log.debug("remoteObject={} hash={} map={}", remoteObject, hashCode, remoteobjectSet);
 		boolean removed = remoteobjectSet.remove(remoteObject);
@@ -349,20 +350,30 @@ public class LookupTable implements LookupTableMBean {
 	 * Gets a method according to the given remote object name and method hash
 	 * value
 	 *
-	 * @param remoteObject the remote object which contains the method
+	 * @param remoteObjectName the remote object name which contains the method
 	 * @param methodHash   the hash of the method
 	 * @return the method
 	 */
-	public synchronized Method getMethod(String remoteObject, long methodHash) {
-
+	public synchronized Method getMethod(String remoteObjectName, long methodHash) {
 		log.debug("begin");
 
-		Method m = remoteObject_to_hashToMethod_Map.get(bindings.get(remoteObject).getRemoteObject()).get(methodHash);
+		final RemoteObjectContainer remoteObjectContainer = bindings.get(remoteObjectName);
+		if (remoteObjectContainer != null) {
+			final Object remoteObject = remoteObjectContainer.getRemoteObject();
+			if (remoteObject != null) {
+				final Map<Long, Method> remoteObjectMethods = remoteObject_to_hashToMethod_Map.get(remoteObject);
+				if (remoteObjectMethods != null) {
+					final Method method = remoteObjectMethods.get(methodHash);
+					log.debug("hash={} resolves to method='{}'", methodHash, method);
+					log.debug("end");
+					return method;
+				}
+			}
+		}
 
-		log.debug("hash={} resolves to method='{}'", methodHash, m);
+		log.debug("Can't resolve method={} for remoteObjectName={}", methodHash, remoteObjectName);
 		log.debug("end");
-
-		return m;
+		return null;
 	}
 
 	/**

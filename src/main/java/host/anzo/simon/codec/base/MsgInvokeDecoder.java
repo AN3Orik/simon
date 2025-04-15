@@ -60,10 +60,15 @@ public class MsgInvokeDecoder extends AbstractMessageDecoder {
 			msgInvoke.setRemoteObjectName(remoteObjectName);
 			log.trace("remote object name read ... remoteObjectName={} pos={}", remoteObjectName, in.position());
 
-			long methodHash = in.getLong();
+			final long methodHash = in.getLong();
 			log.trace("got method hash {}", methodHash);
-			Method method = lookupTable.getMethod(msgInvoke.getRemoteObjectName(), methodHash);
-			log.trace("method looked up ... pos={} method=[{}]", in.position(), method.toString());
+
+			final Method method = lookupTable.getMethod(msgInvoke.getRemoteObjectName(), methodHash);
+			if (method == null) {
+				return null;
+			}
+
+			log.trace("method looked up ... pos={} method=[{}]", in.position(), method);
 
 			int argsLength = in.getInt();
 			log.trace("args len read read ... pos={}", in.position());

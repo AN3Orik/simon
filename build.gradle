@@ -9,16 +9,16 @@ repositories {
     mavenCentral()
 }
 
-version = "1.2"
+version = "1.5"
 
 dependencies {
-    annotationProcessor("org.jetbrains:annotations:24.1.0")
-    compileOnly("org.jetbrains:annotations:24.1.0")
+    annotationProcessor("org.jetbrains:annotations:26.0.2")
+    compileOnly("org.jetbrains:annotations:26.0.2")
 
-    annotationProcessor('org.projectlombok:lombok:1.18.34')
-    compileOnly("org.projectlombok:lombok:1.18.34")
+    annotationProcessor('org.projectlombok:lombok:1.18.38')
+    compileOnly("org.projectlombok:lombok:1.18.38")
 
-    api("org.apache.mina:mina-core:2.2.3")
+    api("org.apache.mina:mina-core:2.2.4")
 }
 
 idea {
