@@ -26,9 +26,11 @@ package host.anzo.simon;
 
 import host.anzo.simon.codec.base.SimonProtocolCodecFactory;
 import host.anzo.simon.exceptions.*;
+import host.anzo.simon.io.AcceptAllBufferAllocator;
 import host.anzo.simon.ssl.SslContextFactory;
 import host.anzo.simon.utils.Utils;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.mina.core.buffer.IoBuffer;
 import org.apache.mina.core.session.IdleStatus;
 
 import java.io.File;
@@ -67,9 +69,11 @@ public class Simon {
 	/**
 	 * Map holding custom invoke timeouts for specific remote methods (including callbacks).
 	 */
-	private static final Map<Method, Integer> customInvokeTimeoutMap = new HashMap<Method, Integer>();
+	private static final Map<Method, Integer> customInvokeTimeoutMap = new HashMap<>();
 
 	static {
+		IoBuffer.setAllocator(new AcceptAllBufferAllocator());
+
 		String property = System.getProperty("host.anzo.simon.debug", "false");
 		boolean debugEnabled = Boolean.parseBoolean(property);
 
