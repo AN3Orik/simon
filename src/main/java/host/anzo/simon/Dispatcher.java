@@ -38,6 +38,7 @@ import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * This class is the "brain" of SIMON on server side, as well as on client side.
@@ -114,6 +115,18 @@ public class Dispatcher implements IoHandler {
 	private final ClassLoader classLoader;
 	private boolean released = false;
 	private final SimonRefQueue<SimonPhantomRef<?>> simonRefQueue;
+
+	private final AtomicReference<SimonSessionListener> sessionListenerRef = new AtomicReference<>(null);
+
+	/**
+	 * Sets a session event listener for this Dispatcher.
+	 * This method must be called by the application before or immediately after starting the Registry.
+	 * @param listener An implementation of SimonSessionListener, or null to remove.
+	 */
+	public void setSessionListener(SimonSessionListener listener) {
+		this.sessionListenerRef.set(listener);
+		log.debug("SimonSessionListener {} registered for Dispatcher {}", listener, this);
+	}
 
 	/**
 	 * Method used by the PingWatchdog for getting the current ping/keepalive
@@ -701,7 +714,7 @@ public class Dispatcher implements IoHandler {
 		synchronized (sessionHasRequestPlaced) {
 			// check if there is already a list with requests for this session
 			if (!sessionHasRequestPlaced.containsKey(session)) {
-				List<Integer> requestListForSession = new ArrayList<Integer>();
+				List<Integer> requestListForSession = new ArrayList<>();
 				requestListForSession.add(sequenceId);
 				sessionHasRequestPlaced.put(session, requestListForSession);
 			} else {
@@ -834,6 +847,18 @@ public class Dispatcher implements IoHandler {
 		log.debug("{} ################################################", id);
 		log.debug("{} ######## session closed", id);
 
+		final SimonSessionListener listener = sessionListenerRef.get();
+		if (listener != null) {
+			try {
+				log.debug("Notifying SimonSessionListener about session closure: {}", session.getId());
+				listener.simonSessionClosed(session, this);
+			} catch (Exception e) {
+				log.error("Error in SimonSessionListener during sessionClosed for session {}", id, e);
+			}
+		} else {
+			log.trace("No SimonSessionListener registered for session closed event: {}", id);
+		}
+
 		lookupTable.unreference(session.getId());
 		interruptWaitingRequests(session);
 
@@ -846,9 +871,7 @@ public class Dispatcher implements IoHandler {
 
 		log.debug("{} ######## notify closed listeners", id);
 		// notify all still attached closed listeners that the one and only session to the server is closed.
-		Iterator<String> iterator = remoteObjectClosedListenersList.keySet().iterator();
-		while (iterator.hasNext()) {
-			String ron = iterator.next();
+		for (String ron : remoteObjectClosedListenersList.keySet()) {
 			List<ClosedListener> list = remoteObjectClosedListenersList.remove(ron);
 			for (ClosedListener closedListener : list) {
 				closedListener.closed();
@@ -902,6 +925,11 @@ public class Dispatcher implements IoHandler {
 		log.debug("session created. session={}", session);
 		session.setAttribute(Statics.SESSION_ATTRIBUTE_LOOKUPTABLE, lookupTable); // attach the lookup table to the session
 		session.setAttribute(Statics.SESSION_ATTRIBUTE_DISPATCHER, this); // attach a reference to the dispatcher.
+
+		final SimonSessionListener listener = sessionListenerRef.get();
+		if (listener != null) {
+			listener.simonSessionCreated(session, this);
+		}
 	}
 
 	/*
@@ -958,6 +986,10 @@ public class Dispatcher implements IoHandler {
 	@Override
 	public void sessionOpened(IoSession session) throws Exception {
 		log.debug("session opened. session={}", session);
+		SimonSessionListener listener = sessionListenerRef.get();
+		if (listener != null) {
+			listener.simonSessionOpened(session, this);
+		}
 	}
 
 	/**

@@ -82,8 +82,7 @@ abstract class AbstractLookup implements Lookup {
 		log.debug("begin");
 
 		if (remoteObject == null) {
-			throw new IllegalArgumentException(
-					"the argument is not a releaseable remote object. Given object was: " + remoteObject);
+			throw new IllegalArgumentException("the argument is not a releasable remote object. Given object is null");
 		}
 
 		// retrieve the proxy object
@@ -257,7 +256,7 @@ abstract class AbstractLookup implements Lookup {
 				} else {
 
 					// add the filters from the list to the filter chain
-					connectionTarget = new StringBuffer().append("Connection[").append(serverAddress).append(":").append(serverPort).append("]").toString();
+					connectionTarget = "Connection[" + serverAddress + ":" + serverPort + "]";
 					for (FilterEntry relation : filters) {
 						filterChain.addLast(relation.name, relation.filter);
 					}

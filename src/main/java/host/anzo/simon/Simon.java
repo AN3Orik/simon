@@ -73,7 +73,6 @@ public class Simon {
 
 	static {
 		IoBuffer.setAllocator(new AcceptAllBufferAllocator());
-
 		String property = System.getProperty("host.anzo.simon.debug", "false");
 		boolean debugEnabled = Boolean.parseBoolean(property);
 
@@ -406,6 +405,15 @@ public class Simon {
 			throw new IllegalArgumentException(
 					"the argument is not a releaseable remote object. Given object was: " + o);
 		}
+	}
+
+	/**
+	 * @param o the object that holds the proxy
+	 * @return proxy connection session ID
+	 */
+	public static long getSessionId(Object o) {
+		final SimonProxy simonProxy = getSimonProxy(o);
+		return simonProxy.getSessionId();
 	}
 
 	/**

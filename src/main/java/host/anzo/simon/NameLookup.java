@@ -45,11 +45,9 @@ public class NameLookup extends AbstractLookup {
 			throw new IllegalArgumentException("Argument cannot be null");
 		}
 
-		if (remoteObjectName.length() == 0) {
+		if (remoteObjectName.isEmpty()) {
 			throw new IllegalArgumentException("Argument is not a valid remote object name");
 		}
-
-		Object proxy = null;
 
 		// check if there is already an dispatcher and key for THIS server
 		SessionDispatcherContainer sessionDispatcherContainer = buildSessionDispatcherContainer(remoteObjectName, serverAddress, serverPort, sslContextFactory, proxyConfig);
@@ -90,7 +88,7 @@ public class NameLookup extends AbstractLookup {
 			/*
 			 * Create the proxy-object with the needed interfaces
 			 */
-			proxy = Proxy.newProxyInstance(SimonClassLoaderHelper.getClassLoader(Simon.class, classLoader), listenerInterfaces, handler);
+			Object proxy = Proxy.newProxyInstance(SimonClassLoaderHelper.getClassLoader(Simon.class, classLoader), listenerInterfaces, handler);
 			log.debug("end");
 			return proxy;
 		}

@@ -61,7 +61,7 @@ public class SimonProxy implements InvocationHandler {
 	 * a reference to the session which is the reference to the related network
 	 * connection
 	 */
-	private IoSession session;
+	private final IoSession session;
 
 	/**
 	 * the interfaces that the remote object has exported
@@ -335,6 +335,13 @@ public class SimonProxy implements InvocationHandler {
 	}
 
 	/**
+	 * @return {@link IoSession} session ID
+	 */
+	public long getSessionId() {
+		return session.getId();
+	}
+
+	/**
 	 * Returns the {@link Dispatcher} instance related to this proxy. May return
 	 * null in case of an already shutdown session
 	 *
@@ -345,7 +352,7 @@ public class SimonProxy implements InvocationHandler {
 	}
 
 	/**
-	 * Returns true if this proxy has been cerated in ciontext of a lookup-call.
+	 * Returns true if this proxy has been cerated in context of a lookup-call.
 	 * False in case of callback object
 	 *
 	 * @return boolean

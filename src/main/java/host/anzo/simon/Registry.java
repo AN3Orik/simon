@@ -136,14 +136,13 @@ public final class Registry {
 	/**
 	 * Starts the registry thread. After stopping, a registry cannot start again.
 	 * One need to create a new registry.
-	 *
+	 * @param sessionListener session listener
 	 * @throws IOException              if there's a problem getting a selector for the non-blocking
 	 *                                  network communication, or if the
 	 * @throws IllegalArgumentException if specified protocol codec cannot be used
 	 * @throws IllegalStateException    if registry is already started or has been stopped.
 	 */
-	public void start() throws IOException {
-
+	public void start(SimonSessionListener sessionListener) throws IOException {
 		if (stopped) {
 			throw new IllegalStateException("Stopped registry cannot start again.");
 		}
@@ -156,6 +155,8 @@ public final class Registry {
 
 			dispatcher = new Dispatcher(null, classLoader, threadPool);
 			log.debug("dispatcher created");
+
+			dispatcher.setSessionListener(sessionListener);
 
 			acceptor = new NioSocketAcceptor();
 
@@ -178,8 +179,9 @@ public final class Registry {
 					try {
 						socket.close();
 						channel.close();
-					} catch (Exception e) {
-					} // close the temporary socket and channel and ignore all errors
+					} catch (Exception ignored) {
+						// close the temporary socket and channel and ignore all errors
+					}
 					log.debug("setting 'ReceiveBufferSize' on NioSocketAcceptor to {}", receiveBufferSize);
 					nioSocketAcceptor.getSessionConfig().setReceiveBufferSize(receiveBufferSize);
 				} catch (IOException ex) {
@@ -452,7 +454,7 @@ public final class Registry {
 	 *
 	 * @return the related dispatcher
 	 */
-	protected Dispatcher getDispatcher() {
+	public Dispatcher getDispatcher() {
 		return dispatcher;
 	}
 
