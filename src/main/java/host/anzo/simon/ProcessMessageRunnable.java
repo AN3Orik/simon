@@ -32,6 +32,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.lang.reflect.UndeclaredThrowableException;
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -394,180 +395,93 @@ public class ProcessMessageRunnable implements Runnable {
 	 * calling end.
 	 */
 	private void processInvoke() {
-		log.debug("begin");
+		log.debug("begin processInvoke");
 
-		log.debug("processing MsgInvoke...");
+		final MsgInvoke msg = (MsgInvoke) abstractMessage;
 
-		Object result = null;
+		boolean shouldSendResponse = true;
 
-		MsgInvoke msg = (MsgInvoke) abstractMessage;
-
-		// if received msg has an error
+		Object result;
 		if (msg.hasError()) {
-			result = new SimonRemoteException(
-					"Received MsgInvoke had errors. Cannot process invocation. error msg: " + msg.getErrorMsg());
+			result = new SimonRemoteException("Received MsgInvoke had errors. Cannot process invocation. error msg: " + msg.getErrorMsg());
+		} else {
+			Method method = msg.getMethod();
+			Object[] arguments = msg.getArguments();
+			String remoteObjectName = msg.getRemoteObjectName();
 
+			if (method == null) {
+				result = new SimonRemoteException("Method could not be resolved on the server for invoke request. RemoteObject: '" + remoteObjectName + "', Request: " + msg);
+				log.error("processInvoke: Method is null for message {}", msg);
+			} else {
+				log.debug("Processing invoke for: ron={} method={} args={}", remoteObjectName, method.getName(), Arrays.toString(arguments));
+
+				try {
+					if (arguments != null) {
+						try {
+							for (int i = 0; i < arguments.length; i++) {
+								if (arguments[i] instanceof SimonRemoteInstance simonCallback) {
+									List<String> interfaceNames = simonCallback.getInterfaceNames();
+									Class<?>[] listenerInterfaces = new Class<?>[interfaceNames.size()];
+									for (int j = 0; j < interfaceNames.size(); j++) {
+										listenerInterfaces[j] = Class.forName(interfaceNames.get(j), true, dispatcher.getClassLoader());
+									}
+									SimonProxy simonProxy = new SimonProxy(dispatcher, session, simonCallback.getId(), listenerInterfaces, false);
+									arguments[i] = Proxy.newProxyInstance(SimonClassLoaderHelper.getClassLoader(this.getClass()), listenerInterfaces, simonProxy);
+									log.debug("Proxy reconstructed for arg {}: {}", i, arguments[i]);
+								} else if (arguments[i] instanceof SimonEndpointReference ser) {
+									log.debug("Argument {} is SimonEndpointReference: {}", i, ser);
+									arguments[i] = dispatcher.getLookupTable().getRemoteObjectContainer(ser.getRemoteObjectName()).getRemoteObject();
+									log.debug("Original object injected for SimonEndpointReference: {}", arguments[i]);
+								}
+							}
+						} catch (Exception e) {
+							throw new SimonRemoteException("Error processing arguments for remote invocation", e);
+						}
+					}
+
+					Object remoteObject = dispatcher.getLookupTable().getRemoteObjectContainer(remoteObjectName).getRemoteObject();
+					result = method.invoke(remoteObject, arguments);
+
+					if (method.getReturnType() == void.class) {
+						log.trace("Method {} returned void. No response will be sent.", method.getName());
+						shouldSendResponse = false;
+						result = null;
+					}
+					else {
+						if (Utils.isSimonProxy(result)) {
+							log.debug("Result of method {} is SimonProxy/Local Endpoint. Sending SimonEndpointReference.", method.getName());
+							result = new SimonEndpointReference(Simon.getSimonProxy(result));
+						} else if (Utils.isValidRemote(result)) {
+							log.debug("Result of method {} is SimonRemote. Sending SimonRemoteInstance.", method.getName());
+							SimonRemoteInstance sri = new SimonRemoteInstance(session, result);
+							dispatcher.getLookupTable().putRemoteInstance(session.getId(), sri, result);
+							result = sri;
+						} else if (result != null && !(result instanceof Serializable)) {
+							log.warn("Result '{}' of method {} is not Serializable", result, method.getName());
+							result = new SimonRemoteException("Result of method '" + method.getName() + "' must be Serializable or SimonRemote.");
+						}
+					}
+				} catch (InvocationTargetException e) {
+					result = (e.getCause() != null) ? e.getCause() : e;
+					log.warn("Exception thrown by invoked method {}: {}", method.getName(), ((Throwable) result).getMessage());
+				} catch (Exception e) {
+					result = new SimonRemoteException("Error during remote invocation of '" + remoteObjectName + "#" + method.getName() + "'", e);
+					log.error("Internal error during processInvoke for {}", msg, e);
+				}
+			}
+		}
+
+		if (shouldSendResponse) {
 			MsgInvokeReturn returnMsg = new MsgInvokeReturn();
 			returnMsg.setSequence(msg.getSequence());
-
 			returnMsg.setReturnValue(result);
-
-			log.debug("Sending result={}", returnMsg);
-
+			log.debug("Sending response for sequenceId {}: {}", msg.getSequence(), returnMsg);
 			session.write(returnMsg);
-			log.debug("end");
-			return;
+		} else {
+			log.debug("Skipping response for void method sequenceId {}", msg.getSequence());
 		}
 
-		Method method = msg.getMethod();
-		Object[] arguments = msg.getArguments();
-		String remoteObjectName = msg.getRemoteObjectName();
-
-		try {
-
-			// ------------
-			// replace existing SimonRemote objects with proxy object
-			if (arguments != null) {
-				try {
-					for (int i = 0; i < arguments.length; i++) {
-
-						// search the arguments for remote endpoint references
-						if (arguments[i] instanceof SimonEndpointReference ser) {
-							log.debug("SimonEndpointReference in args found: {}", ser);
-							arguments[i] = dispatcher.getLookupTable().getRemoteObjectContainer(ser.getRemoteObjectName()).getRemoteObject();
-							log.debug("Original object for SimonEndpointReference injected: " + arguments[i]);
-						}
-
-						// search the arguments for remote instances
-						if (arguments[i] instanceof SimonRemoteInstance simonCallback) {
-
-							log.debug("SimonCallback in args found. id={}", simonCallback.getId());
-
-							List<String> interfaceNames = simonCallback.getInterfaceNames();
-							Class<?>[] listenerInterfaces = new Class<?>[interfaceNames.size()];
-							for (int j = 0; j < interfaceNames.size(); j++) {
-								// See: http://dev.root1.de/issues/127
-								listenerInterfaces[j] = Class.forName(interfaceNames.get(j), true, dispatcher.getClassLoader());
-							}
-
-							// re-implant the proxy object
-							SimonProxy simonProxy = new SimonProxy(dispatcher, session, simonCallback.getId(), listenerInterfaces, false);
-							arguments[i] = Proxy.newProxyInstance(SimonClassLoaderHelper.getClassLoader(this.getClass()), listenerInterfaces, simonProxy);
-							log.debug("proxy object for SimonCallback injected");
-						}
-					}
-				} catch (ClassNotFoundException ex) {
-					throw new ClassNotFoundException(
-							"Callback interface class(es) not found with classloader [" + dispatcher.getClassLoader() +
-									"].", ex);
-				}
-			}
-			// ------------
-
-			log.debug("ron={} method={} args={}", remoteObjectName, method, arguments);
-
-			Object remoteObject = dispatcher.getLookupTable().getRemoteObjectContainer(remoteObjectName).getRemoteObject();
-
-			try {
-				result = method.invoke(remoteObject, arguments);
-			} catch (IllegalArgumentException ex) {
-				log.error(
-						"IllegalArgumentException while invoking remote method. Arguments obviously do not match the methods parameter types. Errormsg: " +
-								ex.getMessage());
-				log.error("***** Analysis of arguments and paramtypes ... ron={} method={} ", remoteObjectName, method.getName());
-				if (arguments != null && arguments.length != 0) {
-					for (int i = 0; i < arguments.length; i++) {
-						log.error("***** arguments[" + i + "]: " +
-								(arguments[i] == null ? "null" : arguments[i].getClass().getCanonicalName()) +
-								" toString: " + (arguments[i] == null ? "null" : arguments[i].toString()));
-					}
-				} else {
-					log.error("***** no arguments available.");
-				}
-
-				Class<?>[] paramType = method.getParameterTypes();
-				if (paramType != null && paramType.length != 0) {
-					for (int i = 0; i < paramType.length; i++) {
-						log.error("***** paramType[" + i + "]: " +
-								(paramType[i] == null ? "null" : paramType[i].getCanonicalName()));
-					}
-				} else {
-					log.error("***** no paramtypes available.");
-				}
-
-				for (Method m : remoteObject.getClass().getMethods()) {
-					log.error("***** remoteObject '{}' has method: {}", remoteObjectName, m);
-				}
-
-				log.error("***** method signature: {}", method.toString());
-				log.error("***** generic method signature: {}", method.toGenericString());
-				log.error("***** Error stacktrace:\n{}", Utils.getStackTraceAsString(ex));
-				log.error("***** Analysis of arguments and paramtypes ... *DONE*");
-				throw ex;
-			}
-
-			// check for re-transmitting callback
-			if (Utils.isSimonProxy(result)) {
-
-				SimonProxy sp = Simon.getSimonProxy(result);
-				SimonEndpointReference ser = new SimonEndpointReference(sp);
-				log.debug("Result of method is SimonProxy/Local Endpoint. Sending: {}", ser);
-				result = ser;
-				//                throw new SimonException("Result of method '" + method + "' is a local endpoint of a remote object. Endpoints can not be transferred.");
-			}
-
-			// check for normal remote objects?!
-			if (dispatcher.getLookupTable().isSimonRemoteRegistered(result)) {
-				throw new SimonException("Result '" + result + "' of method '" + method +
-						"' is a registered remote object. Endpoints can not be transferred.");
-			}
-
-			if (method.getReturnType() == void.class) {
-				result = new SimonVoid();
-			}
-
-			// register "SimonCallback"-results in lookup-table
-			if (Utils.isValidRemote(result)) {
-
-				log.debug("Result of method '{}' is SimonRemote: {}", method, result);
-
-				SimonRemoteInstance sri = new SimonRemoteInstance(session, result);
-
-				dispatcher.getLookupTable().putRemoteInstance(session.getId(), sri, result);
-				result = sri;
-			}
-		} catch (IllegalArgumentException e) {
-			result = e;
-		} catch (InvocationTargetException e) {
-			if (e.getTargetException() instanceof UndeclaredThrowableException) {
-				result = Utils.getRootCause(e.getTargetException());
-			} else {
-				result = e.getTargetException();
-			}
-		} catch (Exception e) {
-			SimonRemoteException sre = new SimonRemoteException(
-					"Errow while invoking '" + remoteObjectName + "#" + method + "' due to underlying exception: " +
-							e.getClass());
-			sre.initCause(e);
-			result = sre;
-		}
-
-		// a return value can be "null" ... this has to be serialized to the client
-		if (result != null && !(result instanceof Serializable)) {
-			log.warn("Result '{}' is not serializable", result);
-			result = new SimonRemoteException("Result of method '" + method +
-					"' must be serializable and therefore implement 'java.io.Serializable' or 'host.anzo.simon.SimonRemote'");
-		}
-
-		MsgInvokeReturn returnMsg = new MsgInvokeReturn();
-		returnMsg.setSequence(msg.getSequence());
-
-		returnMsg.setReturnValue(result);
-
-		log.debug("Sending result={}", returnMsg);
-
-		session.write(returnMsg);
-		log.debug("end");
+		log.debug("end processInvoke");
 	}
 
 	/**

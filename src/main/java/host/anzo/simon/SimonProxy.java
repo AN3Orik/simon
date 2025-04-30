@@ -24,6 +24,7 @@
  */
 package host.anzo.simon;
 
+import host.anzo.simon.exceptions.SessionException;
 import host.anzo.simon.exceptions.SimonRemoteException;
 import host.anzo.simon.utils.SimonClassLoaderHelper;
 import host.anzo.simon.utils.Utils;
@@ -163,6 +164,23 @@ public class SimonProxy implements InvocationHandler {
 					"Could not process invocation of method '" + method.getName() + "'. Underlying exception: " + e);
 		}
 
+		if (method.getReturnType() == void.class) {
+			log.debug("Detected void return type for method: {}. Sending async.", method.getName());
+			try {
+				dispatcher.sendAsyncInvoke(session, remoteObjectName, method, args);
+				log.debug("Sent async void method call: {}", method.getName());
+			} catch (Exception e) {
+				log.error("Failed to send async void method call {} for {}", method.getName(), remoteObjectName, e);
+				if (e instanceof SimonRemoteException) {
+					throw e;
+				}
+			}
+			log.debug("end (async void)");
+			return null;
+		}
+
+		log.debug("Invoking remote method expecting result: {}", method.getName());
+
 		/*
 		 * server then does the following:
 		 * server gets according to the method name and parameter types the method
@@ -209,14 +227,6 @@ public class SimonProxy implements InvocationHandler {
 
 		log.debug("end");
 
-		// see: http://www.webreference.com/internet/reflection/4.html
-		// quote:
-		// "If the called method has declared the return type void,
-		// the value returned by invoke does not matter.
-		// Returning null is the simplest option."
-		if (result instanceof SimonVoid) {
-			return null;
-		}
 
 		return result;
 	}

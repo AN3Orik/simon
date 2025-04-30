@@ -32,7 +32,9 @@ import org.apache.mina.core.service.IoHandler;
 import org.apache.mina.core.session.IdleStatus;
 import org.apache.mina.core.session.IoSession;
 import org.apache.mina.filter.FilterEvent;
+import org.jetbrains.annotations.NotNull;
 
+import java.io.Serializable;
 import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.util.*;
@@ -301,6 +303,56 @@ public class Dispatcher implements IoHandler {
 		return result;
 	}
 
+	private Object[] prepareArgumentsForSend(Object[] args, IoSession session) {
+		if (args == null) {
+			return null;
+		}
+		Object[] preparedArgs = args.clone();
+
+		for (int i = 0; i < preparedArgs.length; i++) {
+			Object arg = preparedArgs[i];
+			if (arg == null) continue;
+
+			if (Utils.isSimonProxy(arg)) {
+				log.debug("Argument {} is a SimonProxy. Replacing with SimonRemoteInstance.", i);
+				preparedArgs[i] = new SimonRemoteInstance(session, arg);
+				log.debug("Replaced arg {} with: {}", i, preparedArgs[i]);
+			}
+			else if (Utils.isValidRemote(arg)) {
+				log.debug("Argument {} is a local remote-capable object. Replacing with SimonRemoteInstance.", i);
+				SimonRemoteInstance sri = new SimonRemoteInstance(session, arg);
+				preparedArgs[i] = sri;
+				lookupTable.putRemoteInstance(session.getId(), sri, arg);
+				log.debug("Replaced arg {} with: {}. Registered locally.", i, preparedArgs[i]);
+			}
+			else if (arg instanceof SimonEndpointReference) {
+				log.debug("Argument {} is SimonEndpointReference, passing as is.", i);
+			}
+			else if (!(arg instanceof Serializable)) {
+				log.warn("Argument {} ({}) is not Serializable and not a remote object/proxy. Serialization might fail.", i, arg.getClass().getName());
+			}
+		}
+		return preparedArgs;
+	}
+
+	protected void sendAsyncInvoke(IoSession session, String remoteObjectName, Method method, Object[] args) throws SimonRemoteException {
+		checkForInvalidState(session, method.toString() + " (async)");
+		final int sequenceId = generateSequenceId();
+		log.debug("begin async send sequenceId={} session={}", sequenceId, session);
+
+		Object[] preparedArgs = prepareArgumentsForSend(args, session);
+
+		MsgInvoke msgInvoke = new MsgInvoke();
+		msgInvoke.setSequence(sequenceId);
+		msgInvoke.setRemoteObjectName(remoteObjectName);
+		msgInvoke.setMethod(method);
+		msgInvoke.setArguments(preparedArgs);
+
+		session.write(msgInvoke);
+
+		log.debug("end async send sequenceId={}", sequenceId);
+	}
+
 	/*
 
 	 * Sends a method invocation request to the remote host.
@@ -323,40 +375,13 @@ public class Dispatcher implements IoHandler {
 		// create a monitor that waits for the request-result
 		final SequenceMonitor monitor = createMonitor(session, sequenceId);
 
-		// register remote instance objects in the lookup-table
-		if (args != null) {
-			for (int i = 0; i < args.length; i++) {
-
-				// prevent sending a client callback-proxy from server back to client
-				if (Utils.isSimonProxy(args[i])) {
-
-					// issue #94
-					SimonProxy sp = Simon.getSimonProxy(args[i]);
-					SimonEndpointReference ser = new SimonEndpointReference(sp);
-					log.debug("Argument {} is a SimonProxy/Local Endpoint. Sending: {}", i, ser);
-					args[i] = ser;
-
-					// old (<1.2.0) behavior
-					//                    throw new SimonException("Given method parameter no# " + (i + 1) + " is a local endpoint of a remote object. Endpoints can not be transferred.");
-				}
-
-				if (Utils.isValidRemote(args[i])) {
-
-					SimonRemoteInstance sri = new SimonRemoteInstance(session, args[i]);
-
-					log.debug("SimonRemoteInstance found! id={}", sri.getId());
-
-					lookupTable.putRemoteInstance(session.getId(), sri, args[i]);
-					args[i] = sri; // overwrite arg with wrapped remote instance-interface
-				}
-			}
-		}
+		Object[] preparedArgs = prepareArgumentsForSend(args, session);
 
 		MsgInvoke msgInvoke = new MsgInvoke();
 		msgInvoke.setSequence(sequenceId);
 		msgInvoke.setRemoteObjectName(remoteObjectName);
 		msgInvoke.setMethod(method);
-		msgInvoke.setArguments(args);
+		msgInvoke.setArguments(preparedArgs);
 
 		session.write(msgInvoke);
 
@@ -507,9 +532,8 @@ public class Dispatcher implements IoHandler {
 	 * @param monitor the monitor related to the request
 	 */
 	private void waitForResult(IoSession session, final SequenceMonitor monitor) {
-		// wait at most 1hr
-		// 60min: 60min * 60sec * 1000ms = 3600000ms
-		waitForResult(session, monitor, 3600000);
+		// wait at most 10 sec
+		waitForResult(session, monitor, 10000);
 	}
 
 	/**
@@ -1267,6 +1291,5 @@ public class Dispatcher implements IoHandler {
 
 	@Override
 	public void event(IoSession session, FilterEvent event) throws Exception {
-
 	}
 }
