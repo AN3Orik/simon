@@ -13,6 +13,6 @@ New releases are made available on Maven Central, enabling you to employ your pr
 ```groovy
 // Gradle
 dependencies {
-    implementation "host.anzo:simon:1.1"
+    implementation "host.anzo:simon:1.8"
 }
 ```
